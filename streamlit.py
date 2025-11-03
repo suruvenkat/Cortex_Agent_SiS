@@ -81,19 +81,22 @@ def log_api_call(start_ts, end_ts, thread_id, parent_message_id, prompt, status_
 def create_thread() -> str | None:
     """
     Calls the Cortex Threads API to create a new thread and returns thread_id.
+    Uses positional args for _snowflake.send_snow_api_request.
     """
     headers = {"User-Agent": USER_AGENT}
     start_ts = datetime.utcnow()
 
+    # NOTE: positional args only
     resp = _snowflake.send_snow_api_request(
-        method="POST",
-        path=API_ENDPOINT_THREADS,
-        headers=headers,
-        params={},
-        body={},           # create with defaults
-        request_guid=None,
-        timeout=API_TIMEOUT_MS
+        "POST",                  # method
+        API_ENDPOINT_THREADS,    # path: "/api/v2/cortex/threads"
+        headers,                 # headers dict
+        {},                      # params dict
+        {},                      # body dict (empty to create default thread)
+        None,                    # request_guid
+        API_TIMEOUT_MS           # timeout in ms
     )
+
     end_ts = datetime.utcnow()
     status = resp.get("status", -1)
 
@@ -115,16 +118,17 @@ def create_thread() -> str | None:
 def agent_run(prompt: str, thread_id: str, parent_message_id: int):
     """
     Calls agent:run with thread_id + parent_message_id and parses streamed events.
+    Uses positional args for _snowflake.send_snow_api_request.
     Returns (aggregated_text, last_sql, assistant_message_id).
     """
     payload = {
         "model": "claude-3-5-sonnet",
         "thread_id": thread_id,
-        "parent_message_id": int(parent_message_id or 0),  # 0 for first turn
+        "parent_message_id": int(parent_message_id or 0),
         "messages": [
             {"role": "user", "content": [{"type": "text", "text": prompt}]}
         ],
-        # Tools are optional; keep or remove based on your needs.
+        # Keep or remove tools/resources as needed
         "tools": [
             {"tool_spec": {"type": "cortex_analyst_text_to_sql", "name": "analyst1"}},
             {"tool_spec": {"type": "cortex_search", "name": "search1"}},
@@ -138,14 +142,15 @@ def agent_run(prompt: str, thread_id: str, parent_message_id: int):
     headers = {"User-Agent": USER_AGENT}
 
     start_ts = datetime.utcnow()
+    # NOTE: positional args only
     resp = _snowflake.send_snow_api_request(
-        method="POST",
-        path=API_ENDPOINT_RUN,
-        headers=headers,
-        params={},
-        body=payload,
-        request_guid=None,
-        timeout=API_TIMEOUT_MS
+        "POST",               # method
+        API_ENDPOINT_RUN,     # path: "/api/v2/cortex/agent:run"
+        headers,              # headers dict
+        {},                   # params dict
+        payload,              # body dict
+        None,                 # request_guid
+        API_TIMEOUT_MS        # timeout in ms
     )
     end_ts = datetime.utcnow()
     status = resp.get("status", -1)
@@ -179,14 +184,12 @@ def agent_run(prompt: str, thread_id: str, parent_message_id: int):
                 if t == "text":
                     aggregated_text += item.get("text", "")
                 elif t == "tool_results":
-                    # Some tool outputs include a JSON with {text, sql}
                     for res in item.get("tool_results", {}).get("content", []):
                         if res.get("type") == "json":
                             j = res.get("json", {}) or {}
                             aggregated_text += j.get("text", "")
                             last_sql = j.get("sql", last_sql)
 
-        # Capture assistant message id when announced
         if et in ("message.completed", "message.created", "response.completed"):
             mid = data.get("message_id")
             if mid is not None:
